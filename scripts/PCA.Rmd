@@ -1,0 +1,30 @@
+---
+title: "MVA Project - PCA"
+author: "Ore Coker"
+date: "2024-11-15"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+``` {r read data}
+body <- read.csv("body_measurements.csv")
+head(body)
+```
+
+``` {r pca}
+body.pca <- princomp(body, cor = T)
+summary(body.pca, loading = T)
+
+```
+
+``` {r}
+# 5 components cover 85% of original dataset's variation
+body.pca$loading[,1:5]
+```
+
