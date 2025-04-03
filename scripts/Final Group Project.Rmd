@@ -1,0 +1,344 @@
+---
+title: "Multivariate Analysis Group Project"
+author: "Coco Choo, Ore Coker, Siavash Arbabi"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(MVA)
+library("KernSmooth")
+library(mclust)
+library(knitr)
+
+# Import data
+setwd("C:\\Coco\\TTU\\Fall 2024\\Fall II\\Multivariate Analysis\\Final Project\\")
+bodym <- read.csv("body_measurements.csv")
+```
+
+```{r}
+# Correlation matrix
+datacor = cor(bodym)
+head(round(datacor, 2))
+```
+
+```{r}
+# Estimate the means of all three variables (called mean vector)
+xbar <- colMeans(bodym)
+
+# Covariance matrix
+S <- cov(bodym)
+
+# Mahalanobis distance
+d2 <- mahalanobis(bodym, xbar, S)
+head(d2)
+```
+```{r}
+# Degree of freedom
+numVariables = ncol(bodym)
+
+# Find plotting positions (between 0 and 1) evenly as the following
+position = (1:nrow(bodym) - 1/2)/nrow(bodym)
+
+# Measure quantile values
+quantiles <- qchisq(position, df = numVariables)
+
+# Plot quantile of the expected chi-sq distribution versus our sorted mahalanobis distance values
+plot(quantiles, sort(d2),
+    xlab = expression(paste(chi[25]^2, " Quantile")), 
+    ylab = "Ordered squared distances",
+    main = "Mahalanovis Distance Plot")
+abline(a = 0, b = 1, col = "red", lty = 2)
+text(quantiles, sort(d2), labels = 1:nrow(bodym), col = "blue", pos = 2, cex = 0.5)
+```
+
+```{r}
+# Remove outliers from the list
+outlier <- match(c(501, 502, 503, 504, 505, 506, 507), rownames(bodym))
+mydata_clean <- bodym [-outlier, ]
+```
+
+```{r}
+# Correlation Matrix after removing outliers
+dataclean_corr = cor(mydata_clean)
+head(round(dataclean_corr, 2))
+```
+
+```{r}
+# Kernel density estimator of Weight using Gaussian kernel
+plot(density(bodym$wgt, bw = 0.8, kernel = "gaussian"))
+
+# Kernel density estimator of Height using Gaussian kernel
+plot(density(bodym$hgt, bw = 0.8, kernel = "gaussian"))
+```
+
+```{r}
+# Appropriate bandwidth using dpik function
+bw <- c(dpik(bodym$wgt), dpik(bodym$hgt))
+
+# Data with only Weight and Height
+body_wh <- bodym[, c(23,24)]
+
+# Scatterplot enhanced with bivariate density
+density <- bkde2D(body_wh, bandwidth = bw)
+
+# 3-D perspective plot
+pers_3d <- persp(x = density$x1, y = density$x2, 
+      z = density$fhat,
+      xlab = "Weight (Kg)",
+      ylab = "Height (cm)",
+      zlab = "density",
+      main="Perspective Plot of Body Measurements", phi = 20)
+```
+
+```{r}
+# Assign different colors based on Sex
+# Green if the respondent is male and red if the respondent is female
+col = ifelse(bodym$sex == 1, "green", "red")
+
+# Plot original data
+plot(body_wh, xlab = "Weight (Kg)",
+     ylab = "Height (cm)",
+     main="Measurement of Weight and Height", col = col)
+
+# Add contours for bivariate densities
+contour(x = density$x1, y = density$x2, z = density$fhat, add = TRUE)
+
+# Add a legend to explain the colored points
+legend("topright",
+       legend = c("Male", "Female"), 
+       col = c("green", "red"),
+       pch = 1,
+       cex = .8)
+```
+
+```{r}
+# Dimension Reduction Analysis
+# PCA analysis
+body.s <- scale(bodym)
+body.pca <- princomp(body.s, cor = T)
+body.pca$loading[, 1:5]
+```
+
+```{r}
+# Cluster Analysis
+# Scree Plot
+plot.wgss = function(mydata, maxc = nrow(mydata) - 1) {
+wgss = numeric(maxc)
+for (i in 1:maxc) {
+km <- kmeans(mydata, centers = i, nstart = 20)
+wgss[i] = km$tot.withinss
+}
+plot(1:maxc, wgss, type = "b", xlab = "Number of Clusters", ylab = "Within groups sum of squares",
+main = "Scree Plot")
+}
+plot.wgss(body.s, maxc = 10) 
+km <- kmeans(body.s, centers = 3, nstart = 10)
+
+# Classification Table for K-Means Clustering
+km.t <- table(km$cluster)
+km.t
+```
+
+```{r, results='hide'}
+# Cluster Column Means Table
+clusterMeans <- km$centers
+rownames(clusterMeans) <- c("Cluster 1", "Cluster 2", "Cluster 3")
+kable(clusterMeans, caption = "Column Means for each Cluster")
+```
+
+```{r}
+# Confirmatory Factor Analysis
+# Perform EFA
+data.fa<- factanal(bodym,factors = 2)
+data.fa
+print(data.fa$loadings,cut=0.5)
+
+# EFA approximated correlation matrix
+corr<- cor(bodym)
+f.loading<- data.fa$loadings[,1:2]
+corHat<- (f.loading)%*%t(f.loading)+diag(data.fa$uniquenesses)
+
+# RMSE
+rsme<- sqrt(mean((corr-corHat)^2))
+rsme
+```
+
+```{r}
+library("semPlot")
+library("sem")
+
+body_model <- specifyModel(text = "
+Upper_Body     -> biacromial_d, lambda1, NA
+Upper_Body     -> chest_dep, lambda2, NA
+Upper_Body     -> chest_d, lambda3, NA
+Upper_Body     -> elbow_d, lambda4, NA
+Upper_Body     -> wrist_d, lambda5, NA
+Upper_Body     -> shoulder_gi, lambda6, NA
+Upper_Body     -> chest_gi, lambda7, NA
+Upper_Body     -> bicep_gi, lambda8, NA
+Upper_Body     -> forearm_gi, lambda9, NA
+Upper_Body     -> wrist_min_gi, lambda10, NA
+Upper_Body     -> wgt, lambda11, NA
+Upper_Body     -> hgt, lambda12, NA
+Upper_Body     -> sex, lambda13, NA
+Lower_Body     -> biiliac_d, lambda14, NA
+Lower_Body     -> bitrochanteric_d, lambda15, NA
+Lower_Body     -> waist_gi, lambda16, NA
+Lower_Body     -> navel_gi, lambda17, NA
+Lower_Body     -> hip_gi, lambda18, NA
+Lower_Body     -> thigh_gi, lambda19, NA
+Lower_Body     -> knee_d, lambda20, NA
+Lower_Body     -> ankle_d, lambda21, NA
+Lower_Body     -> knee_gi, lambda22, NA
+Lower_Body     -> calf_max_gi, lambda23, NA
+Lower_Body     -> ankle_min_gi, lambda24, NA
+Lower_Body     -> wgt, lambda25, NA
+Upper_Body     <-> Lower_Body, rho, NA
+biacromial_d   <-> biacromial_d, theta1, NA
+chest_dep      <-> chest_dep, theta2, NA
+chest_d        <-> chest_d, theta3, NA
+elbow_d        <-> elbow_d, theta4, NA
+wrist_d        <-> wrist_d, theta5, NA
+shoulder_gi    <-> shoulder_gi, theta6, NA
+chest_gi       <-> chest_gi, theta7, NA
+bicep_gi       <-> bicep_gi, theta8, NA
+forearm_gi     <-> forearm_gi, theta9, NA
+wrist_min_gi   <-> wrist_min_gi, theta10, NA
+wgt            <-> wgt, theta11, NA
+hgt            <-> hgt, theta12, NA
+sex            <-> sex, theta13, NA
+biiliac_d      <-> biiliac_d, theta14, NA
+bitrochanteric_d <-> bitrochanteric_d, theta15, NA
+waist_gi       <-> waist_gi, theta16, NA
+navel_gi       <-> navel_gi, theta17, NA
+hip_gi         <-> hip_gi, theta18, NA
+thigh_gi       <-> thigh_gi, theta19, NA
+knee_d         <-> knee_d, theta20, NA
+ankle_d        <-> ankle_d, theta21, NA
+knee_gi        <-> knee_gi, theta22, NA
+calf_max_gi    <-> calf_max_gi, theta23, NA
+ankle_min_gi   <-> ankle_min_gi, theta24, NA
+age            <-> age, theta25, NA
+Upper_Body    <-> Upper_Body, NA, 1
+Lower_Body <-> Lower_Body, NA, 1
+")
+```
+
+```{r}
+# CFA
+body_sem <- sem(body_model, corr, nrow(bodym))
+summary(body_sem)
+
+# Path diagram
+semPaths(body_sem, rotation = 2, 'std', 'est')
+
+# Some fit indices
+options(fit.indices = c("GFI", "AGFI", "SRMR"))
+
+criteria = summary(body_sem)
+criteria$GFI
+criteria$AGFI
+criteria$SRMR 
+
+criteria$GFI > 0.90
+criteria$AGFI > 0.80
+criteria$SRMR < 0.1
+```
+
+```{r}
+# Second Confirmatory Factor Analysis
+data_new <- bodym[, -(22:25)]
+
+# Perform EFA
+data.fa<- factanal(data_new,factors = 2)
+data.fa
+print(data.fa$loadings,cut=0.5)
+
+# EFA approximated correlation matrix
+corr<- cor(data_new)
+f.loading<- data.fa$loadings[,1:2]
+corHat<- (f.loading)%*%t(f.loading)+diag(data.fa$uniquenesses)
+
+# RSME
+rsme<- sqrt(mean((corr-corHat)^2))
+rsme
+```
+
+```{r}
+body_mode3 <- specifyModel(text = "
+Upper_Body     -> biacromial_d, lambda1, NA
+Upper_Body     -> chest_dep, lambda2, NA
+Upper_Body     -> chest_d, lambda3, NA
+Upper_Body     -> elbow_d, lambda4, NA
+Upper_Body     -> wrist_d, lambda5, NA
+Upper_Body     -> shoulder_gi, lambda6, NA
+Upper_Body     -> chest_gi, lambda7, NA
+Upper_Body     -> bicep_gi, lambda8, NA
+Upper_Body     -> forearm_gi, lambda9, NA
+Upper_Body     -> wrist_min_gi, lambda10, NA
+Lower_Body     -> biiliac_d, lambda11, NA
+Lower_Body     -> bitrochanteric_d, lambda12, NA
+Lower_Body     -> knee_d, lambda13, NA
+Lower_Body     -> ankle_d, lambda14, NA
+Lower_Body     -> waist_gi, lambda15, NA
+Lower_Body     -> navel_gi, lambda16, NA
+Lower_Body     -> hip_gi, lambda17, NA
+Lower_Body     -> thigh_gi, lambda18, NA
+Lower_Body     -> knee_gi, lambda19, NA
+Lower_Body     -> calf_max_gi, lambda20, NA
+Lower_Body     -> ankle_min_gi, lambda21, NA
+Upper_Body     <-> Lower_Body, rho, NA
+biacromial_d   <-> biacromial_d, theta1, NA
+chest_dep      <-> chest_dep, theta2, NA
+chest_d        <-> chest_d, theta3, NA
+elbow_d        <-> elbow_d, theta4, NA
+wrist_d        <-> wrist_d, theta5, NA
+shoulder_gi    <-> shoulder_gi, theta6, NA
+chest_gi       <-> chest_gi, theta7, NA
+bicep_gi       <-> bicep_gi, theta8, NA
+forearm_gi     <-> forearm_gi, theta9, NA
+wrist_min_gi   <-> wrist_min_gi, theta10, NA
+biiliac_d      <-> biiliac_d, theta11, NA
+bitrochanteric_d <-> bitrochanteric_d, theta12, NA
+waist_gi       <-> waist_gi, theta13, NA
+navel_gi       <-> navel_gi, theta14, NA
+hip_gi         <-> hip_gi, theta15, NA
+thigh_gi       <-> thigh_gi, theta16, NA
+knee_d         <-> knee_d, theta17, NA
+ankle_d        <-> ankle_d, theta18, NA
+knee_gi        <-> knee_gi, theta19, NA
+calf_max_gi    <-> calf_max_gi, theta20, NA
+ankle_min_gi   <-> ankle_min_gi, theta21, NA
+Upper_Body    <-> Upper_Body, NA, 1
+Lower_Body <-> Lower_Body, NA, 1
+")
+```
+
+```{r}
+# CFA
+body_sem <- sem(body_mode3, corr, nrow(data_new))
+
+# Path diagram
+semPaths(body_sem, rotation = 2, 'std', 'est')
+
+# Some fit indices
+options(fit.indices = c("GFI", "AGFI", "SRMR"))
+
+criteria=summary(body_sem)
+criteria$GFI
+criteria$AGFI
+criteria$SRMR 
+
+criteria$GFI > 0.90
+criteria$AGFI > 0.80
+criteria$SRMR < 0.1
+```
